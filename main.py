@@ -15,7 +15,7 @@ import pytz                    # ⚠️ NAYA IMPORT: India (IST) timezone ke liy
 MASTER_SHEET_ID = os.environ.get("MASTER_SHEET_ID")
 TARGET_TAB = "AET Planner 2"
 LINKS_TAB = "Batch Links 2"
-LOG_TAB = "Sync Log 2"
+LOG_TAB = "Sync Log"
 # ==========================================
 
 def sync_sheets():
