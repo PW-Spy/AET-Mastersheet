@@ -5,6 +5,11 @@ on:
     - cron: '*/10 * * * *'
   workflow_dispatch:
 
+# 🛡️ YEH NAYA RULE HAI (Double run block karne ke liye)
+concurrency:
+  group: sync-sheet-group
+  cancel-in-progress: true
+
 jobs:
   run-sync:
     runs-on: ubuntu-latest
