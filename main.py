@@ -13,9 +13,10 @@ import pytz
 
 # ==========================================
 MASTER_SHEET_ID = os.environ.get("MASTER_SHEET_ID")
-TARGET_TAB = "AET Planner 2"
+MASTER_TARGET_TAB = "AET Planner 2"  # Master sheet jahan data WRITE hoga
+SOURCE_TARGET_TAB = "AET Planner"    # Har batch file jahan se data READ hoga
 LINKS_TAB = "Batch Links 2"
-LOG_TAB = "Sync Log 2"
+LOG_TAB = "Sync Log"
 # ==========================================
 
 def sync_sheets():
@@ -37,24 +38,23 @@ def sync_sheets():
     try:
         master_ss = client.open_by_key(MASTER_SHEET_ID)
         links_sheet = master_ss.worksheet(LINKS_TAB)
-        target_sheet = master_ss.worksheet(TARGET_TAB)
+        target_sheet = master_ss.worksheet(MASTER_TARGET_TAB) # Write karne ke liye Master Tab khola
         
         try:
             log_sheet = master_ss.worksheet(LOG_TAB)
         except gspread.exceptions.WorksheetNotFound:
-            # ⚠️ FIXED: Ab yeh naye LOG_TAB name se hi tab banayega
             log_sheet = master_ss.add_worksheet(title=LOG_TAB, rows="1000", cols="5")
             print(f"📋 Naya Tab '{LOG_TAB}' bana diya gaya hai.")
             
     except Exception as e:
-        print(f"❌ Error: Master Sheet open nahi hui. Check Credentials or Sheet ID. Error: {e}")
+        print(f"❌ Error: Master Sheet open nahi hui. Error: {e}")
         return
 
     print("🔍 Batch Links dhundh rahe hain...")
     try:
         links_data = links_sheet.col_values(1)
     except Exception as e:
-        print(f"❌ Error: {LINKS_TAB} se data nahi padh paaye. Check Tab Name. Error: {e}")
+        print(f"❌ Error: {LINKS_TAB} se data nahi padh paaye. Error: {e}")
         return
         
     all_data = []
@@ -64,11 +64,12 @@ def sync_sheets():
     current_time = datetime.now(ist_timezone).strftime('%Y-%m-%d %H:%M:%S')
 
     print("⏳ Data fetching shuru (VIP Direct API Mode)...")
-    safe_range = urllib.parse.quote(f"{TARGET_TAB}!A2:M")
+    # ⚠️ FIXED: Batch files se padhne ke liye SOURCE_TARGET_TAB ('AET Planner') use kiya hai
+    safe_range = urllib.parse.quote(f"{SOURCE_TARGET_TAB}!A2:M")
 
     for index, url in enumerate(links_data):
         url_clean = url.strip()
-        if not url_clean or url_clean.startswith("Google Sheet Link"): # Header skip
+        if not url_clean or url_clean.startswith("Google Sheet Link"): 
             continue
             
         match = re.search(r'/d/([a-zA-Z0-9-_]+)', url_clean)
@@ -116,7 +117,7 @@ def sync_sheets():
                     time.sleep(15)
                 elif e.code == 400:
                     print(f"   ⚠️ Warning: Batch {index + 1} mein Tab nahi mila.")
-                    log_rows.append([url_clean, "Failed", 0, f"Tab '{TARGET_TAB}' not found in source", current_time])
+                    log_rows.append([url_clean, "Failed", 0, f"Tab '{SOURCE_TARGET_TAB}' not found in source", current_time])
                     success = True
                     time.sleep(1.2)
                     break
@@ -137,7 +138,7 @@ def sync_sheets():
         if not success:
             log_rows.append([url_clean, "Failed", 0, "API limit or persistent error. Skipped.", current_time])
 
-    # 1. Master Sheet Data Update
+    # 1. Master Sheet Data Update (Writes to AET Planner 2)
     if len(all_data) > 0:
         print(f"🧹 Purana data saaf kar rahe hain...")
         target_sheet.batch_clear(["A2:M"]) 
