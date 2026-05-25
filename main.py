@@ -8,25 +8,28 @@ import json
 import urllib.request
 import urllib.parse
 import urllib.error
-from datetime import datetime  # ⚠️ NAYA IMPORT: Time calculate karne ke liye
-import pytz                    # ⚠️ NAYA IMPORT: India (IST) timezone ke liye
+from datetime import datetime  
+import pytz                     
 
 # ==========================================
 MASTER_SHEET_ID = os.environ.get("MASTER_SHEET_ID")
 TARGET_TAB = "AET Planner 2"
 LINKS_TAB = "Batch Links 2"
-LOG_TAB = "Sync Log"
+LOG_TAB = "Sync Log 2"
 # ==========================================
 
 def sync_sheets():
     print("🚀 System Start: Google se connect kar rahe hain...")
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     
+    if not os.environ.get("GOOGLE_CREDENTIALS") or not os.environ.get("MASTER_SHEET_ID"):
+        print("❌ Error: GitHub Secrets mein GOOGLE_CREDENTIALS ya MASTER_SHEET_ID missing hai!")
+        return
+
     creds_info = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
     creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
     client = gspread.authorize(creds)
     
-    # VIP Direct API ke liye Token generate karna
     auth_req = google.auth.transport.requests.Request()
     creds.refresh(auth_req)
     access_token = creds.token
@@ -39,31 +42,33 @@ def sync_sheets():
         try:
             log_sheet = master_ss.worksheet(LOG_TAB)
         except gspread.exceptions.WorksheetNotFound:
+            # ⚠️ FIXED: Ab yeh naye LOG_TAB name se hi tab banayega
             log_sheet = master_ss.add_worksheet(title=LOG_TAB, rows="1000", cols="5")
             print(f"📋 Naya Tab '{LOG_TAB}' bana diya gaya hai.")
             
     except Exception as e:
-        print(f"❌ Error: Master Sheet open nahi hui. Error: {e}")
+        print(f"❌ Error: Master Sheet open nahi hui. Check Credentials or Sheet ID. Error: {e}")
         return
 
     print("🔍 Batch Links dhundh rahe hain...")
-    links_data = links_sheet.col_values(1)
-    
+    try:
+        links_data = links_sheet.col_values(1)
+    except Exception as e:
+        print(f"❌ Error: {LINKS_TAB} se data nahi padh paaye. Check Tab Name. Error: {e}")
+        return
+        
     all_data = []
     log_rows = []
     
-    # 🛠️ TIMEZONE FIX: Server time ko hata kar exact India (IST) time lagaya gaya hai
     ist_timezone = pytz.timezone('Asia/Kolkata')
     current_time = datetime.now(ist_timezone).strftime('%Y-%m-%d %H:%M:%S')
 
-    print("⏳ Data fetching shuru (VIP Direct API Mode - Anti Quota Limit)...")
-    
-    # Tab ke naam ko URL ke liye safe banana
+    print("⏳ Data fetching shuru (VIP Direct API Mode)...")
     safe_range = urllib.parse.quote(f"{TARGET_TAB}!A2:M")
 
     for index, url in enumerate(links_data):
         url_clean = url.strip()
-        if not url_clean:
+        if not url_clean or url_clean.startswith("Google Sheet Link"): # Header skip
             continue
             
         match = re.search(r'/d/([a-zA-Z0-9-_]+)', url_clean)
@@ -79,7 +84,6 @@ def sync_sheets():
         
         for attempt in range(max_retries):
             try:
-                # Direct Google API Call (1 request instead of 3)
                 req_obj = urllib.request.Request(api_url)
                 req_obj.add_header('Authorization', f'Bearer {access_token}')
                 
@@ -90,9 +94,8 @@ def sync_sheets():
                 if len(values) > 0:
                     filtered_data = []
                     for row in values:
-                        # Empty rows hata rahe hain
                         if len(row) > 0 and (row[0].strip() != "" or (len(row)>1 and row[1].strip() != "")):
-                            padded_row = row + [""] * (13 - len(row)) # A se M tak barabar size
+                            padded_row = row + [""] * (13 - len(row))
                             filtered_data.append(padded_row[:13])
                             
                     all_data.extend(filtered_data)
@@ -104,8 +107,6 @@ def sync_sheets():
                     log_rows.append([url_clean, "Success", 0, "Sheet is empty", current_time])
                 
                 success = True
-                
-                # Yeh 1.2 second ka strict wait humein hamesha 60 req/min ki limit se bachaega
                 time.sleep(1.2) 
                 break 
                 
@@ -115,7 +116,7 @@ def sync_sheets():
                     time.sleep(15)
                 elif e.code == 400:
                     print(f"   ⚠️ Warning: Batch {index + 1} mein Tab nahi mila.")
-                    log_rows.append([url_clean, "Failed", 0, f"Tab '{TARGET_TAB}' not found", current_time])
+                    log_rows.append([url_clean, "Failed", 0, f"Tab '{TARGET_TAB}' not found in source", current_time])
                     success = True
                     time.sleep(1.2)
                     break
