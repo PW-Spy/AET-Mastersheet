@@ -13,10 +13,10 @@ import pytz
 
 # ==========================================
 MASTER_SHEET_ID = os.environ.get("MASTER_SHEET_ID")
-MASTER_TARGET_TAB = "AET Planner 2"  # Master sheet jahan data WRITE hoga
-SOURCE_TARGET_TAB = "AET Planner"    # Har batch file jahan se data READ hoga
+MASTER_TARGET_TAB = "AET Planner 2"  
+SOURCE_TARGET_TAB = "AET Planner"    
 LINKS_TAB = "Batch Links 2"
-LOG_TAB = "Sync Log"
+LOG_TAB = "Sync Log 2"
 # ==========================================
 
 def sync_sheets():
@@ -24,7 +24,7 @@ def sync_sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     
     if not os.environ.get("GOOGLE_CREDENTIALS") or not os.environ.get("MASTER_SHEET_ID"):
-        print("❌ Error: GitHub Secrets mein GOOGLE_CREDENTIALS ya MASTER_SHEET_ID missing hai!")
+        print("❌ Error: GitHub Secrets missing hain!")
         return
 
     creds_info = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
@@ -38,7 +38,7 @@ def sync_sheets():
     try:
         master_ss = client.open_by_key(MASTER_SHEET_ID)
         links_sheet = master_ss.worksheet(LINKS_TAB)
-        target_sheet = master_ss.worksheet(MASTER_TARGET_TAB) # Write karne ke liye Master Tab khola
+        target_sheet = master_ss.worksheet(MASTER_TARGET_TAB) 
         
         try:
             log_sheet = master_ss.worksheet(LOG_TAB)
@@ -64,7 +64,6 @@ def sync_sheets():
     current_time = datetime.now(ist_timezone).strftime('%Y-%m-%d %H:%M:%S')
 
     print("⏳ Data fetching shuru (VIP Direct API Mode)...")
-    # ⚠️ FIXED: Batch files se padhne ke liye SOURCE_TARGET_TAB ('AET Planner') use kiya hai
     safe_range = urllib.parse.quote(f"{SOURCE_TARGET_TAB}!A2:M")
 
     for index, url in enumerate(links_data):
@@ -80,7 +79,7 @@ def sync_sheets():
         sid = match.group(1)
         api_url = f"https://sheets.googleapis.com/v4/spreadsheets/{sid}/values/{safe_range}"
         
-        max_retries = 3
+        max_retries = 5 # ⚠️ NAYA FIX: 3 se 5 tries kar diye
         success = False
         
         for attempt in range(max_retries):
@@ -108,42 +107,45 @@ def sync_sheets():
                     log_rows.append([url_clean, "Success", 0, "Sheet is empty", current_time])
                 
                 success = True
-                time.sleep(1.2) 
+                time.sleep(2.0) # ⚠️ NAYA FIX: Speed limit bachane ke liye safe wait
                 break 
                 
             except urllib.error.HTTPError as e:
                 if e.code == 429:
-                    print(f"   ⏳ Speed limit hit. Waiting 15 sec... (Attempt {attempt + 1}/{max_retries})")
-                    time.sleep(15)
+                    # ⚠️ NAYA FIX: Smart Retry Logic (15s, 30s, 45s...)
+                    wait_time = 15 * (attempt + 1)
+                    print(f"   ⏳ Speed limit hit. Waiting {wait_time} sec... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
                 elif e.code == 400:
                     print(f"   ⚠️ Warning: Batch {index + 1} mein Tab nahi mila.")
                     log_rows.append([url_clean, "Failed", 0, f"Tab '{SOURCE_TARGET_TAB}' not found in source", current_time])
                     success = True
-                    time.sleep(1.2)
+                    time.sleep(2.0)
                     break
                 elif e.code == 403 or e.code == 404:
                     reason = "Permission Denied (Robot not editor) or Sheet Deleted"
                     print(f"   ⚠️ Warning: Batch {index + 1} failed. Reason: {reason}")
                     log_rows.append([url_clean, "Failed", 0, reason, current_time])
                     success = True
-                    time.sleep(1.2)
+                    time.sleep(2.0)
                     break
                 else:
                     print(f"   ⚠️ Unknown API Error: {e.code}")
-                    time.sleep(5)
+                    time.sleep(10)
             except Exception as e:
-                print(f"   ⚠️ Network Error. Waiting 5 sec... Error: {str(e)}")
-                time.sleep(5)
+                print(f"   ⚠️ Network Error. Waiting 10 sec... Error: {str(e)}")
+                time.sleep(10)
                     
         if not success:
             log_rows.append([url_clean, "Failed", 0, "API limit or persistent error. Skipped.", current_time])
 
-    # 1. Master Sheet Data Update (Writes to AET Planner 2)
+    # 1. Master Sheet Data Update
     if len(all_data) > 0:
         print(f"🧹 Purana data saaf kar rahe hain...")
         target_sheet.batch_clear(["A2:M"]) 
         print(f"📝 Naya {len(all_data)} rows ka data likh rahe hain...")
-        target_sheet.update(f"A2:M{len(all_data) + 1}", all_data)
+        # ⚠️ NAYA FIX: Warning hatane ke liye (values=..., range_name=...)
+        target_sheet.update(values=all_data, range_name=f"A2:M{len(all_data) + 1}")
         print("🎉 SUCCESS: Saara data Master Sheet update ho gaya!")
     else:
         print("ℹ️ Info: Bhejne ke liye koi data nahi mila.")
@@ -152,11 +154,13 @@ def sync_sheets():
     print("📊 Sync Log update kar rahe hain...")
     log_sheet.clear()
     log_headers = ["Google Sheet Link", "Sync Status", "Rows Imported", "Error / Success Reason", "Last Checked Time"]
-    log_sheet.update("A1:E1", [log_headers])
+    
+    # ⚠️ NAYA FIX: Warning hatane ke liye (values=..., range_name=...)
+    log_sheet.update(values=[log_headers], range_name="A1:E1")
     
     if len(log_rows) > 0:
         padded_logs = [r + [""]*(5-len(r)) for r in log_rows]
-        log_sheet.update(f"A2:E{len(log_rows) + 1}", padded_logs)
+        log_sheet.update(values=padded_logs, range_name=f"A2:E{len(log_rows) + 1}")
     print("✅ Sync Log dashboard taiyaar hai!")
 
 if __name__ == "__main__":
