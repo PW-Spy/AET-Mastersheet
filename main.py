@@ -13,10 +13,10 @@ import pytz
 
 # ==========================================
 MASTER_SHEET_ID = os.environ.get("MASTER_SHEET_ID")
-MASTER_TARGET_TAB = "AET Planner 2"  
+MASTER_TARGET_TAB = "AET Planner"  
 SOURCE_TARGET_TAB = "AET Planner"    
-LINKS_TAB = "Batch Links 2"
-LOG_TAB = "Sync Log 2"
+LINKS_TAB = "Batch Links"
+LOG_TAB = "Sync Log"
 # ==========================================
 
 def sync_sheets():
