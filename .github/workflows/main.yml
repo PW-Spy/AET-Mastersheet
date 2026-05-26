@@ -2,7 +2,7 @@ name: Unlimited Auto Sync
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 # 🛡️ YEH NAYA RULE HAI (Double run block karne ke liye)
