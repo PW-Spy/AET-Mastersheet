@@ -33,9 +33,9 @@ def process_single_sheet(index, url, access_token, safe_range, current_time):
     sid = match.group(1)
     api_url = f"https://sheets.googleapis.com/v4/spreadsheets/{sid}/values/{safe_range}"
     
-    # 🛡️ FIX 1: Retries 3 se badhakar 10 kar diye (Data miss nahi hoga)
+    # 🛡️ FIX: Retries 10 hain aur Sleep Time badha diya hai taaki Google Limit Hit message na aaye
     max_retries = 10
-    time.sleep(random.uniform(0.5, 2.0))
+    time.sleep(random.uniform(3.0, 4.5)) # 🐢 SMOOTH MODE: Normal speed jisse server ko pata na chale
     
     for attempt in range(1, max_retries + 1):
         try:
@@ -61,7 +61,6 @@ def process_single_sheet(index, url, access_token, safe_range, current_time):
             
         except urllib.error.HTTPError as e:
             if e.code == 429:
-                # 🛡️ Smart Backoff: Har try ke sath wait time badhega (10s, 20s, 30s...)
                 wait_time = 10 * attempt 
                 print(f"   ⏳ Batch {index + 1} Limit hit. {wait_time}s ruk kar retry... (Attempt {attempt}/{max_retries})")
                 time.sleep(wait_time)
@@ -120,10 +119,10 @@ def sync_sheets():
     ist_timezone = pytz.timezone('Asia/Kolkata')
     current_time = datetime.now(ist_timezone).strftime('%Y-%m-%d %H:%M:%S')
 
-    print("⏳ Data fetching shuru (🚀 STABLE MULTI-THREADING)...")
+    print("⏳ Data fetching shuru (🚀 SMOOTH MULTI-THREADING)...")
     safe_range = urllib.parse.quote(f"{SOURCE_TARGET_TAB}!A2:M")
 
-    # 🛡️ FIX 2: 5 ki jagah 3 workers kar diye (Google limit hit nahi hogi)
+    # 🛡️ FIX: 3 workers hain jo safely bina bhid-bhad ke kaam karenge
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = []
         for index, url in enumerate(links_data):
