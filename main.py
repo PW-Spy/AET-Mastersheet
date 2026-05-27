@@ -10,7 +10,7 @@ import urllib.parse
 import urllib.error
 from datetime import datetime  
 import pytz                     
-import concurrent.futures  # 🚀 NAYA V8 ENGINE (Multi-Threading)
+import concurrent.futures  
 import random
 
 # ==========================================
@@ -21,7 +21,6 @@ LINKS_TAB = "Batch Links"
 LOG_TAB = "Sync Log"
 # ==========================================
 
-# ⚡ NAYA FUNCTION: Har ladka (Thread) apna kaam is function se karega
 def process_single_sheet(index, url, access_token, safe_range, current_time):
     url_clean = url.strip()
     if not url_clean or url_clean.startswith("Google Sheet Link"):
@@ -34,11 +33,11 @@ def process_single_sheet(index, url, access_token, safe_range, current_time):
     sid = match.group(1)
     api_url = f"https://sheets.googleapis.com/v4/spreadsheets/{sid}/values/{safe_range}"
     
-    max_retries = 3
-    # Thoda random delay taaki 5 ladke ek theek usi mili-second par Google ka darwaza na todein
-    time.sleep(random.uniform(0.1, 1.5))
+    # 🛡️ FIX 1: Retries 3 se badhakar 10 kar diye (Data miss nahi hoga)
+    max_retries = 10
+    time.sleep(random.uniform(0.5, 2.0))
     
-    for attempt in range(max_retries):
+    for attempt in range(1, max_retries + 1):
         try:
             req_obj = urllib.request.Request(api_url)
             req_obj.add_header('Authorization', f'Bearer {access_token}')
@@ -62,8 +61,9 @@ def process_single_sheet(index, url, access_token, safe_range, current_time):
             
         except urllib.error.HTTPError as e:
             if e.code == 429:
-                wait_time = 10 + (attempt * 5) # Pehli baar 10s, dusri baar 15s rukega
-                print(f"   ⏳ Batch {index + 1} Limit hit. {wait_time}s ruk kar retry...")
+                # 🛡️ Smart Backoff: Har try ke sath wait time badhega (10s, 20s, 30s...)
+                wait_time = 10 * attempt 
+                print(f"   ⏳ Batch {index + 1} Limit hit. {wait_time}s ruk kar retry... (Attempt {attempt}/{max_retries})")
                 time.sleep(wait_time)
             elif e.code in [400, 403, 404]:
                 reason = "Tab not found" if e.code == 400 else "Permission Denied/Deleted"
@@ -74,12 +74,9 @@ def process_single_sheet(index, url, access_token, safe_range, current_time):
         except Exception as e:
             time.sleep(5)
             
-    print(f"   ❌ Batch {index + 1} Skipped after retries.")
+    print(f"   ❌ Batch {index + 1} Skipped after {max_retries} retries. (CRITICAL)")
     return {'data': [], 'log': [url_clean, "Failed", 0, "API limit or Error. Skipped.", current_time]}
 
-# ==========================================
-# MAIN SYSTEM
-# ==========================================
 def sync_sheets():
     print("🚀 System Start: Google se connect kar rahe hain...")
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -123,16 +120,15 @@ def sync_sheets():
     ist_timezone = pytz.timezone('Asia/Kolkata')
     current_time = datetime.now(ist_timezone).strftime('%Y-%m-%d %H:%M:%S')
 
-    print("⏳ Data fetching shuru (🚀 MULTI-THREADING TURBO MODE)...")
+    print("⏳ Data fetching shuru (🚀 STABLE MULTI-THREADING)...")
     safe_range = urllib.parse.quote(f"{SOURCE_TARGET_TAB}!A2:M")
 
-    # 🚀 YAHAN 5 WORKERS EK SATH KAAM KARENGE
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    # 🛡️ FIX 2: 5 ki jagah 3 workers kar diye (Google limit hit nahi hogi)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = []
         for index, url in enumerate(links_data):
             futures.append(executor.submit(process_single_sheet, index, url, access_token, safe_range, current_time))
             
-        # Jaise-jaise result aata jayega, hum all_data mein jodte jayenge
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             if result:
@@ -141,7 +137,6 @@ def sync_sheets():
                 if result['log']:
                     log_rows.append(result['log'])
 
-    # 1. Master Sheet Data Update (WITH 503 ERROR RETRY)
     if len(all_data) > 0:
         print(f"🧹 Purana data saaf kar rahe hain...")
         target_sheet.batch_clear(["A2:M"]) 
@@ -164,7 +159,6 @@ def sync_sheets():
     else:
         print("ℹ️ Info: Bhejne ke liye koi data nahi mila.")
 
-    # 2. LOG TAB Data Update
     print("📊 Sync Log update kar rahe hain...")
     log_sheet.clear()
     log_headers = ["Google Sheet Link", "Sync Status", "Rows Imported", "Error Reason", "Last Checked Time"]
